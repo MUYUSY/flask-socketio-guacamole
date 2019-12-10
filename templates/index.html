@@ -1,0 +1,417 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="utf-8">
+    <title>Flask-SocketIO-Guacamole</title>
+    <link rel="icon" type="image/png" href="../static/images/favicon.png">
+    <!-- Bootstrap -->
+    <!--<link href="css/bootstrap.min.css" rel='stylesheet' type='text/css'/>-->
+    <meta name="viewport"
+          content="width=1400, user-scalable=no, initial-scale=1.0, maximum-scale=1.0, minimum-scale=1.0">
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+
+    <link href="../static/css/style.css" rel="stylesheet" type="text/css" media="all"/>
+    <!-- start plugins -->
+    <link href="../static/css/bootstrap.min.css" rel='stylesheet' type='text/css'/>
+    <link href="../static/css/bootstrap-select.min.css" rel='stylesheet' type='text/css'/>
+    <!----font-Awesome----->
+    <link rel="stylesheet" href="../static/fonts/css/font-awesome.min.css">
+    <!----font-Awesome----->
+</head>
+<body>
+<div class="header_bg" id="home"><!-- start header -->
+    <div class="header_container">
+        <div class="header">
+            <div class="row">
+                <div class="col-xs-2">
+                    <span>Remote Host</span>
+                    <label for="remote_host"><input id="remote_host" type="text"></label>
+                </div>
+                <div class="col-xs-2">
+                    <span>Remote Port</span>
+                    <label for="remote_port"><input id="remote_port" type="text"></label>
+                </div>
+                <select class="selectpicker select-serial col-xs-2" title="Remote Protocol" id="remote_protocol">
+                    <option value="ssh">SSH</option>
+                    <option value="rdp">RDP</option>
+                    <option value="vnc">VNC</option>
+                </select>
+                <div class="col-xs-2">
+                    <span>Username</span>
+                    <label for="username"><input id="username" type="text"></label>
+                </div>
+                <div class="col-xs-2">
+                    <span>Password</span>
+                    <label for="password"><input id="password" type="password"></label>
+                </div>
+                <div class="col-xs-2">
+                    <img src="../static/images/offline2.png" id="connect-status"
+                         height="28" width="28" style="margin-left: 15px; margin-bottom: 14px;">
+                    <button class="btn btn-default"
+                            style="display: inline; margin: 0 0 14px 15px;"
+                            id="connect" onclick="connect()">连接</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<div class="slider_bg">
+    <div class="container" style="position: absolute; top: 68px;">
+        <div id="display"></div>
+    </div>
+</div>
+
+</body>
+</html>
+<script type="text/javascript" src="../static/js/socket.io/socket.io.js"></script>
+<script type="text/javascript" src="../static/js/jquery.min.js"></script>
+<script type="text/javascript" src="../static/js/bootstrap.min.js"></script>
+<script type="text/javascript" src="../static/js/bootstrap-select.min.js"></script>
+<script type="text/javascript" src="../static/js/moment.min.js"></script>
+<script type="text/javascript" src="../static/js/guacamole-common.js"></script>
+
+<script type="text/javascript">
+    // extend guacamole-common.js, add support to socket io.
+    Guacamole.SocketIOTunnel = function (tunnelURL) {
+        /**
+         * Reference to this SocketIO tunnel.
+         * @private
+         */
+        let tunnel = this;
+
+        /**
+         * The SocketIO used by this tunnel.
+         * @private
+         */
+        let socket = null;
+
+        /**
+         * The current receive timeout ID, if any.
+         * @private
+         */
+        let receive_timeout = null;
+
+        /**
+         * The current connection stability timeout ID, if any.
+         *
+         * @private
+         * @type {Number}
+         */
+        let unstableTimeout = null;
+
+        /**
+         * The current connection stability test ping interval ID, if any. This
+         * will only be set upon successful connection.
+         *
+         * @private
+         * @type {Number}
+         */
+        let pingInterval = null;
+
+        /**
+         * The WebSocket protocol corresponding to the protocol used for the current
+         * location.
+         * @private
+         */
+        let ws_protocol = {
+            "http:": "ws:",
+            "https:": "wss:"
+        };
+        /**
+         * The number of milliseconds to wait between connection stability test
+         * pings.
+         *
+         * @private
+         * @constant
+         * @type {Number}
+         */
+        var PING_FREQUENCY = 500;
+
+        // Transform current URL to WebSocket URL
+
+        // If not already a websocket URL
+        if (tunnelURL.substring(0, 3) !== "ws:"
+            && tunnelURL.substring(0, 4) !== "wss:") {
+
+            var protocol = ws_protocol[window.location.protocol];
+
+            // If absolute URL, convert to absolute WS URL
+            if (tunnelURL.substring(0, 1) === "/") {
+                tunnelURL =
+                    protocol
+                    + "//" + window.location.host
+                    + tunnelURL;
+            }
+        }
+
+        /**
+         * Initiates a timeout which, if data is not received, causes the tunnel
+         * to close with an error.
+         *
+         * @private
+         */
+        function reset_timeout() {
+
+            // Get rid of old timeouts (if any)
+            window.clearTimeout(receive_timeout);
+            window.clearTimeout(unstableTimeout);
+
+            // Clear unstable status
+            if (tunnel.state === Guacamole.Tunnel.State.UNSTABLE)
+                tunnel.setState(Guacamole.Tunnel.State.OPEN);
+
+            // Set new timeout for tracking overall connection timeout
+            receive_timeout = window.setTimeout(function () {
+                close_tunnel(new Guacamole.Status(Guacamole.Status.Code.UPSTREAM_TIMEOUT, "Server timeout."));
+            }, tunnel.receiveTimeout);
+
+            // Set new timeout for tracking suspected connection instability
+            unstableTimeout = window.setTimeout(function () {
+                tunnel.setState(Guacamole.Tunnel.State.UNSTABLE);
+            }, tunnel.unstableThreshold);
+
+        }
+
+        /**
+         * Closes this tunnel, signaling the given status and corresponding
+         * message, which will be sent to the onerror handler if the status is
+         * an error status.
+         *
+         * @private
+         * @param {Guacamole.Status} status The status causing the connection to
+         *                                  close;
+         */
+        function close_tunnel(status) {
+
+            // Get rid of old timeouts (if any)
+            window.clearTimeout(receive_timeout);
+            window.clearTimeout(unstableTimeout);
+
+            // Cease connection test pings
+            window.clearInterval(pingInterval);
+
+            // Ignore if already closed
+            if (tunnel.state === Guacamole.Tunnel.State.CLOSED)
+                return;
+
+            // If connection closed abnormally, signal error.
+            if (status.code !== Guacamole.Status.Code.SUCCESS && tunnel.onerror)
+                tunnel.onerror(status);
+
+            // Mark as closed
+            tunnel.setState(Guacamole.Tunnel.State.CLOSED);
+
+            socket.close();
+
+        }
+
+        this.sendMessage = function (elements) {
+
+            // Do not attempt to send messages if not connected
+            if (!tunnel.isConnected())
+                return;
+
+            // Do not attempt to send empty messages
+            if (arguments.length === 0)
+                return;
+
+            /**
+             * Converts the given value to a length/string pair for use as an
+             * element in a Guacamole instruction.
+             *
+             * @private
+             * @param value The value to convert.
+             * @return {String} The converted value.
+             */
+            function getElement(value) {
+                var string = new String(value);
+                return string.length + "." + string;
+            }
+
+            // Initialized message with first element
+            var message = getElement(arguments[0]);
+
+            // Append remaining elements
+            for (var i = 1; i < arguments.length; i++)
+                message += "," + getElement(arguments[i]);
+
+            // Final terminator
+            message += ";";
+
+            socket.emit('message', message);
+
+        };
+        this.emit = function (path, data) {
+            console.log(data)
+            socket.emit(path, data);
+        };
+        this.connect = function (data) {
+
+            reset_timeout();
+
+            // Mark the tunnel as connecting
+            tunnel.setState(Guacamole.Tunnel.State.CONNECTING);
+
+            // Connect socket
+            socket = io.connect(tunnelURL);
+
+            socket.on('connect', function (event) {
+                reset_timeout();
+
+                // Ping tunnel endpoint regularly to test connection stability
+                pingInterval = setInterval(function sendPing() {
+                    tunnel.sendMessage(Guacamole.Tunnel.INTERNAL_DATA_OPCODE,
+                        "ping", new Date().getTime());
+                }, PING_FREQUENCY);
+
+            });
+
+            socket.on('disconnect', function (event) {
+
+                // Pull status code directly from closure reason provided by Guacamole
+                if (event.reason)
+                    close_tunnel(new Guacamole.Status(parseInt(event.reason), event.reason));
+
+                // Failing that, derive a Guacamole status code from the WebSocket
+                // status code provided by the browser
+                else if (event.code)
+                    close_tunnel(new Guacamole.Status(Guacamole.Status.Code.fromWebSocketCode(event.code)));
+
+                // Otherwise, assume server is unreachable
+                else
+                    close_tunnel(new Guacamole.Status(Guacamole.Status.Code.UPSTREAM_NOT_FOUND));
+
+            });
+
+            socket.on('message', function (message) {
+
+                reset_timeout();
+
+                var message = message;
+                var startIndex = 0;
+                var elementEnd;
+
+                var elements = [];
+
+                do {
+
+                    // Search for end of length
+                    var lengthEnd = message.indexOf(".", startIndex);
+                    if (lengthEnd !== -1) {
+
+                        // Parse length
+                        var length = parseInt(message.substring(elementEnd + 1, lengthEnd));
+
+                        // Calculate start of element
+                        startIndex = lengthEnd + 1;
+
+                        // Calculate location of element terminator
+                        elementEnd = startIndex + length;
+
+                    }
+
+                    // If no period, incomplete instruction.
+                    else
+                        close_tunnel(new Guacamole.Status(Guacamole.Status.Code.SERVER_ERROR, "Incomplete instruction."));
+
+                    // We now have enough data for the element. Parse.
+                    var element = message.substring(startIndex, elementEnd);
+                    var terminator = message.substring(elementEnd, elementEnd + 1);
+
+                    // Add element to array
+                    elements.push(element);
+
+                    // If last element, handle instruction
+                    if (terminator === ";") {
+
+                        // Get opcode
+                        var opcode = elements.shift();
+
+                        // Update state and UUID when first instruction received
+                        if (tunnel.uuid === null) {
+
+                            // Associate tunnel UUID if received
+                            if (opcode === Guacamole.Tunnel.INTERNAL_DATA_OPCODE)
+                                tunnel.uuid = elements[0];
+
+                            // Tunnel is now open and UUID is available
+                            tunnel.setState(Guacamole.Tunnel.State.OPEN);
+
+                        }
+
+                        // Call instruction handler.
+                        if (opcode !== Guacamole.Tunnel.INTERNAL_DATA_OPCODE && tunnel.oninstruction)
+                            tunnel.oninstruction(opcode, elements);
+
+                        // Clear elements
+                        elements.length = 0;
+
+                    }
+
+                    // Start searching for length at character after
+                    // element terminator
+                    startIndex = elementEnd + 1;
+
+                } while (startIndex < message.length);
+
+            });
+
+        };
+
+        this.disconnect = function () {
+            close_tunnel(new Guacamole.Status(Guacamole.Status.Code.SUCCESS, "Manually closed."));
+        };
+    };
+
+    Guacamole.SocketIOTunnel.prototype = new Guacamole.Tunnel();
+    let tunnel;
+    let client;
+
+    let connect = function () {
+        if ($('#connect').text() === '连接') {
+            if ($('#remote_host').val() && $('#remote_port').val() && $('#remote_protocol').val()) {
+                tunnel = new Guacamole.SocketIOTunnel('http://' + document.domain + ':' + location.port + '/data');
+                client = new Guacamole.Client(tunnel);
+                $('#display').append(client.getDisplay().getElement());
+                client.onerror = function (error) {
+                    alert(error);
+                };
+                client.connect();
+
+                let mouse = new Guacamole.Mouse(client.getDisplay().getElement());
+                let keyboard = new Guacamole.Keyboard(document);
+                tunnel.emit('remote', {
+                    ip: $('#remote_host').val(),
+                    port: $('#remote_port').val(),
+                    protocol: $('#remote_protocol').val(),
+                    width: $(window).width(),
+                    height: $(window).height() - 68,
+                    username: $('#username').val(),
+                    password: $('#password').val(),
+                });
+                mouse.onmousedown =
+                    mouse.onmouseup =
+                        mouse.onmousemove = function (mouseState) {
+                            client.sendMouseState(mouseState);
+                        };
+                keyboard.onkeydown = function (keysym) {
+                    client.sendKeyEvent(1, keysym);
+                };
+                keyboard.onkeyup = function (keysym) {
+                    client.sendKeyEvent(0, keysym);
+                };
+                window.onunload = function () {
+                    client.disconnect();
+                }
+                $('#connect-status').attr('src', '../static/images/online2.png');
+                $('#connect').text('断开');
+            } else {
+                alert('Enter remote host, remote port and select a remote protocol first!');
+            }
+        } else {
+            client.disconnect();
+            $('#connect-status').attr('src', '../static/images/offline2.png');
+            $('#connect').text('连接');
+        }
+    }
+</script>
