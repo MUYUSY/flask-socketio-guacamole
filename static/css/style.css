@@ -29,9 +29,14 @@ input[type="number"]{
     -moz-appearance: textfield;
 }
 
+input {
+    line-height: 2 !important;
+    padding-left: 8px;
+}
 
 .container {
     min-width: 1280px !important;
+    min-height: 600px !important;
 }
 
 .header_container {
@@ -49,6 +54,11 @@ input[type="number"]{
     z-index: 999999;
 }
 
+.dropdown-menu {
+    position: relative !important;
+    float: none !important;
+}
+
 .header_title {
     margin-left: 40px;
     color: #fff;
@@ -60,15 +70,7 @@ input[type="number"]{
 .select-serial {
     margin-bottom: 14px;
     width: 200px;
-}
-
-.part-header {
-    font-size: 24px;
-    font-weight: 500;
-    width: 100%;
-    border-bottom: 1px solid #333333;
-    padding-left: 15px;
-    margin-bottom: 15px;
+    float: left !important;
 }
 
 .tab-area {

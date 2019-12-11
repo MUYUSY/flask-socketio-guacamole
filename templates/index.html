@@ -23,40 +23,36 @@
     <div class="header_container">
         <div class="header">
             <div class="row">
-                <div class="col-xs-2">
-                    <span>Remote Host</span>
-                    <label for="remote_host"><input id="remote_host" type="text"></label>
-                </div>
-                <div class="col-xs-2">
-                    <span>Remote Port</span>
-                    <label for="remote_port"><input id="remote_port" type="text"></label>
-                </div>
                 <select class="selectpicker select-serial col-xs-2" title="Remote Protocol" id="remote_protocol">
                     <option value="ssh">SSH</option>
                     <option value="rdp">RDP</option>
                     <option value="vnc">VNC</option>
                 </select>
                 <div class="col-xs-2">
-                    <span>Username</span>
-                    <label for="username"><input id="username" type="text"></label>
+                    <label for="remote_host"><input id="remote_host" type="text" placeholder="host"></label>
                 </div>
                 <div class="col-xs-2">
-                    <span>Password</span>
-                    <label for="password"><input id="password" type="password"></label>
+                    <label for="remote_port"><input id="remote_port" type="text" placeholder="port"></label>
+                </div>
+                <div class="col-xs-2">
+                    <label for="username"><input id="username" type="text" placeholder="username"></label>
+                </div>
+                <div class="col-xs-2">
+                    <label for="password"><input id="password" type="password" placeholder="password"></label>
                 </div>
                 <div class="col-xs-2">
                     <img src="../static/images/offline2.png" id="connect-status"
                          height="28" width="28" style="margin-left: 15px; margin-bottom: 14px;">
                     <button class="btn btn-default"
                             style="display: inline; margin: 0 0 14px 15px;"
-                            id="connect" onclick="connect()">连接</button>
+                            id="connect" onclick="connect()">Connect</button>
                 </div>
             </div>
         </div>
     </div>
 </div>
 <div class="slider_bg">
-    <div class="container" style="position: absolute; top: 68px;">
+    <div class="container" style="position: absolute; top: 68px; padding: 0 !important;">
         <div id="display"></div>
     </div>
 </div>
@@ -242,7 +238,6 @@
 
         };
         this.emit = function (path, data) {
-            console.log(data)
             socket.emit(path, data);
         };
         this.connect = function (data) {
@@ -281,17 +276,21 @@
                 else
                     close_tunnel(new Guacamole.Status(Guacamole.Status.Code.UPSTREAM_NOT_FOUND));
 
+                location.reload();
+
             });
 
             socket.on('message', function (message) {
 
                 reset_timeout();
 
-                var message = message;
-                var startIndex = 0;
-                var elementEnd;
+                if (message.indexOf('disconnect') >= 0) {
+                    this.disconnect();
+                }
+                let startIndex = 0;
+                let elementEnd;
 
-                var elements = [];
+                let elements = [];
 
                 do {
 
@@ -366,20 +365,25 @@
     Guacamole.SocketIOTunnel.prototype = new Guacamole.Tunnel();
     let tunnel;
     let client;
+    let mouse;
+    let keyboard;
 
     let connect = function () {
-        if ($('#connect').text() === '连接') {
+        if ($('#connect').text() === 'Connect') {
             if ($('#remote_host').val() && $('#remote_port').val() && $('#remote_protocol').val()) {
                 tunnel = new Guacamole.SocketIOTunnel('http://' + document.domain + ':' + location.port + '/data');
                 client = new Guacamole.Client(tunnel);
                 $('#display').append(client.getDisplay().getElement());
+
+                if (!mouse)
+                    mouse = new Guacamole.Mouse(client.getDisplay().getElement());
+                if (!keyboard)
+                    keyboard = new Guacamole.Keyboard(document);
+
                 client.onerror = function (error) {
-                    alert(error);
+                    alert(error.message);
                 };
                 client.connect();
-
-                let mouse = new Guacamole.Mouse(client.getDisplay().getElement());
-                let keyboard = new Guacamole.Keyboard(document);
                 tunnel.emit('remote', {
                     ip: $('#remote_host').val(),
                     port: $('#remote_port').val(),
@@ -400,18 +404,30 @@
                 keyboard.onkeyup = function (keysym) {
                     client.sendKeyEvent(0, keysym);
                 };
-                window.onunload = function () {
-                    client.disconnect();
-                }
                 $('#connect-status').attr('src', '../static/images/online2.png');
-                $('#connect').text('断开');
+                $('#connect').text('Disconnect');
             } else {
                 alert('Enter remote host, remote port and select a remote protocol first!');
             }
         } else {
             client.disconnect();
-            $('#connect-status').attr('src', '../static/images/offline2.png');
-            $('#connect').text('连接');
+            // $('#connect-status').attr('src', '../static/images/offline2.png');
+            // $('#connect').text('Connect');
+            // alert('Disconnect success.')
+            // $('#display').html('');
+            // mouse.onmousedown =
+            //     mouse.onmouseup =
+            //         mouse.onmousemove = function (mouseState) {
+            //             return
+            //         };
+            // keyboard.onkeydown = function (keysym) {
+            //     return
+            // };
+            // keyboard.onkeyup = function (keysym) {
+            //     return
+            // };
+            // mouse = null;
+            // keyboard = null;
         }
     }
 </script>

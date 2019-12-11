@@ -32,7 +32,6 @@ class MainNamespace(Namespace):
         self.client.close()
 
     def on_remote(self, data):
-        print('111')
         self.remote_ip = data.get('ip')
         self.remote_protocol = data.get('protocol')
         self.remote_port = data.get('port')
@@ -42,11 +41,11 @@ class MainNamespace(Namespace):
         self.password = data.get('password')
 
         if self.username and self.password:
-            self.client.handshake(protocol='ssh', hostname='47.104.100.145', port=22,
+            self.client.handshake(protocol=self.remote_protocol, hostname=self.remote_ip, port=self.remote_port,
                                   width=self.width, height=self.height,
                                   username=self.username, password=self.password)
         else:
-            self.client.handshake(protocol='ssh', hostname='47.104.100.145', port=22,
+            self.client.handshake(protocol=self.remote_protocol, hostname=self.remote_ip, port=self.remote_port,
                                   width=self.width, height=self.height)
         self.connect_status = True
         # emit('connect_status', {'status': self.connect_status}, Namespace='/data')
@@ -54,7 +53,9 @@ class MainNamespace(Namespace):
             instruction = self.client.receive()
             if instruction:
                 if 'disconnect' in instruction:
-                    emit('connect_status', {'status': False}, Namespace='/data')
+                    emit('message', instruction, namespace='/data')
+                    self.client.close()
+                    # emit('connect_status', {'status': False}, Namespace='/data')
                     break
                 emit('message', instruction, namespace='/data')
 
