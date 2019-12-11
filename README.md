@@ -2,9 +2,7 @@
 
 A flask-socketio based web service to achieve remote desktop work with guacd together.
 
-###Useage
-
----
+#### Useage
 
 - You need to have a guacamole server (guacd), follow the step given by the official: 
 https://guacamole.apache.org/doc/gug/installing-guacamole.html or install with docker
@@ -19,8 +17,7 @@ https://guacamole.apache.org/doc/gug/installing-guacamole.html or install with d
 
 - Easy to use with just input the parameters.
 
-
-###Notes
+#### Notes
 
 flask-socketio-guacamole is licensed under the MIT License.
 Appreciate to [pygocamole](https://github.com/mohabusama/pyguacamole) and 
