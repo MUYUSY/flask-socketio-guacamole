@@ -1,0 +1,13 @@
+Click==7.0
+Flask==1.1.1
+Flask-SocketIO==4.2.1
+future==0.18.2
+greenlet==0.4.15
+itsdangerous==1.1.0
+Jinja2==2.10.3
+MarkupSafe==1.1.1
+pyguacamole==0.9
+python-engineio==3.11.0
+python-socketio==4.4.0
+six==1.13.0
+Werkzeug==0.16.0
